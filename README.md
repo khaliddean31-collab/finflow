@@ -92,8 +92,8 @@ Lihat aplikasi yang sudah berjalan di sini:
 
 Dibuat dengan penuh dedikasi oleh **Dean Khalid**. Jika Anda tertarik untuk berkontribusi atau memiliki pertanyaan, silakan hubungi saya melalui:
 
-- **Email**: [khaliddean31]@gmail.com
-- **GitHub**: [khaliddean31-collab]
+- **Email**: khaliddean31@gmail.com
+- **GitHub**: khaliddean31-collab
 
 ---
 # finflow by Dean Khalid
