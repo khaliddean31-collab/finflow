@@ -126,7 +126,7 @@ export default function AppSidebar({ company, userName, onLogout }: Props) {
           <AnimatePresence>
             {!collapsed && (
               <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                {t("Sign Out")}
+                {t("common.signOut")}
               </motion.span>
             )}
           </AnimatePresence>
