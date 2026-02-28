@@ -86,7 +86,7 @@ Ikuti langkah-langkah berikut untuk mengintegrasikan Supabase dengan aplikasi An
 ## 🌐 Live Demo
 
 Lihat aplikasi yang sudah berjalan di sini:
-[**👉 Lihat Live Demo FinFlow**](https://finflow-dean.vercel.app/)
+[**👉 Lihat Live Demo FinFlow**](https://finflow-dk.vercel.app/)
 
 ## 📧 Kontak & Kontribusi
 
@@ -96,5 +96,4 @@ Dibuat dengan penuh dedikasi oleh **Dean Khalid**. Jika Anda tertarik untuk berk
 - **GitHub**: [khaliddean31-collab]
 
 ---
-*FinFlow - By Dean Khalid*
-# finflow
+# finflow by Dean Khalid
