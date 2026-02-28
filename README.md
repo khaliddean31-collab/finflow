@@ -30,7 +30,7 @@ Ikuti langkah berikut untuk menjalankan project di komputer Anda:
 
 1. **Clone Repositori**
    ```bash
-   git clone <URL_REPOSITORI_ANDA>
+   git clone https://github.com/khaliddean31-collab/finflow.git
    cd FinFlow
    ```
 
