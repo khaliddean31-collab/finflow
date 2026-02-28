@@ -37,11 +37,15 @@ Ikuti langkah berikut untuk menjalankan project di komputer Anda:
 2. **Instal Dependencies**
    ```bash
    npm install
+   atau
+   yarn install
    ```
 
 3. **Jalankan Aplikasi**
    ```bash
    npm run dev
+   atau
+   yarn dev
    ```
 
 ## 📦 Cara Setup Supabase ke FinFlow
