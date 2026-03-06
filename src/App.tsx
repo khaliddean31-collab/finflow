@@ -10,6 +10,7 @@ import {
   getProfile,
   getUserCompany,
   getTransactions,
+  getCompanyMemberCount,
   addTransaction as dbAddTransaction,
   deleteTransaction as dbDeleteTransaction,
 } from "@/lib/database";
@@ -63,15 +64,17 @@ function AppShell() {
         // Load the company the user owns or is a member of
         const { company: companyRow } = await getUserCompany(user!.id);
         if (companyRow) {
+          const { count } = await getCompanyMemberCount(companyRow.id);
           setCompany({
             id: companyRow.id,
             name: companyRow.name,
             currency: companyRow.currency,
             joinCode: companyRow.join_code,
+            memberCount: count ?? 1,
           });
         }
-      } catch {
-        // User will be shown Onboarding if no company found
+      } catch (error) {
+        console.error("Error loading user data:", error);
       } finally {
         setAppLoading(false);
       }
@@ -209,7 +212,19 @@ function AppShell() {
           />
           <Route
             path="/settings"
-            element={<Settings company={company} onUpdate={setCompany} />}
+            element={
+              <Settings
+                company={company}
+                onUpdate={(newCompany) => {
+                  const currencyChanged = company.currency !== newCompany.currency;
+                  setCompany(newCompany);
+                  if (currencyChanged) {
+                    // Force reload the page so transactions refetch and formatters update
+                    window.location.reload();
+                  }
+                }}
+              />
+            }
           />
         </Routes>
       </main>

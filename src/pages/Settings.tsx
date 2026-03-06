@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Building2, Save, Copy, Check, Languages } from "lucide-react";
 
@@ -27,15 +27,49 @@ const CURRENCIES: { code: string; label: string }[] = [
   { code: "CHF", label: "CHF — Swiss Franc" },
 ];
 
+import { supabase } from "@/lib/supabase";
+import { updateCompany } from "@/lib/database";
+
 export default function Settings({ company, onUpdate }: Props) {
   const { t, i18n } = useTranslation();
   const [form, setForm] = useState({ name: company.name, currency: company.currency });
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    setIsSaving(true);
+    const currencyChanged = form.currency !== company.currency;
+
+    // 1. Simpan perubahan info perusahaan ke database
+    await updateCompany(company.id, { name: form.name, currency: form.currency });
+
+    // 2. Konversi seluruh nominal uang di database jika mata uang berubah!
+    if (currencyChanged) {
+      // Rates based on approx USD exchange values
+      const RATES: Record<string, number> = { USD: 1, IDR: 15500, EUR: 0.92, GBP: 0.79, SGD: 1.35, CAD: 1.36, AUD: 1.52, JPY: 150, CHF: 0.88 };
+      const oldRate = RATES[company.currency] || 1;
+      const newRate = RATES[form.currency] || 1;
+      const multiplier = newRate / oldRate;
+
+      const { data: txs } = await supabase.from('transactions').select('id, amount').eq('company_id', company.id);
+
+      if (txs && txs.length > 0) {
+        await Promise.all(txs.map(tx => {
+          // Bulatkan hasilnya agar rapi dan tidak ada desimal aneh
+          const newAmount = Math.round(tx.amount * multiplier);
+          return supabase.from('transactions').update({ amount: newAmount }).eq('id', tx.id);
+        }));
+      }
+
+      // Jika berhasil konversi, paksa muat ulang seluruh halaman agar semua data dan tabel transaksi segar dari DB
+      window.location.reload();
+      return;
+    }
+
     onUpdate({ ...company, ...form });
     setSaved(true);
+    setIsSaving(false);
     setTimeout(() => setSaved(false), 2000);
   };
 
@@ -49,8 +83,21 @@ export default function Settings({ company, onUpdate }: Props) {
     i18n.changeLanguage(lng);
   };
 
+  const [members, setMembers] = useState<any[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(true);
+
+  useEffect(() => {
+    async function loadMembers() {
+      const { getCompanyMembers } = await import("@/lib/database");
+      const { members: list } = await getCompanyMembers(company.id);
+      setMembers(list);
+      setLoadingMembers(false);
+    }
+    loadMembers();
+  }, [company.id]);
+
   return (
-    <div className="p-6 space-y-6 max-w-2xl mx-auto">
+    <div className="p-6 space-y-6 max-w-2xl mx-auto pb-10">
       <div>
         <h1 className="text-2xl font-bold">{t("settings.title")}</h1>
         <p className="text-muted-foreground text-sm mt-0.5">{t("settings.subtitle")}</p>
@@ -93,8 +140,10 @@ export default function Settings({ company, onUpdate }: Props) {
               </div>
               <p className="text-xs text-muted-foreground">{t("settings.joinCodeHint")}</p>
             </div>
-            <Button onClick={handleSave} className="gap-2">
-              {saved ? <><Check className="h-4 w-4" /> {t("common.saved")}</> : <><Save className="h-4 w-4" /> {t("common.save")}</>}
+            <Button onClick={handleSave} disabled={isSaving || saved} className="gap-2">
+              {isSaving ? <><div className="h-4 w-4 border-2 border-current border-t-transparent animate-spin rounded-full" /> {t("common.saving", { defaultValue: "Menyimpan..." })}</> :
+                saved ? <><Check className="h-4 w-4" /> {t("common.saved")}</> :
+                  <><Save className="h-4 w-4" /> {t("common.save")}</>}
             </Button>
           </CardContent>
         </Card>
@@ -111,18 +160,20 @@ export default function Settings({ company, onUpdate }: Props) {
             </div>
           </CardHeader>
           <CardContent className="p-5">
-            <div className="space-y-2">
-              <Label>{t("settings.language")}</Label>
-              <select
-                value={i18n.language.split("-")[0]}
-                onChange={e => changeLanguage(e.target.value)}
-                className="w-full h-10 rounded-md bg-background border border-input text-foreground px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-              >
-                <option value="en">{t("languages.en")}</option>
-                <option value="id">{t("languages.id")}</option>
-                <option value="zh">{t("languages.zh")}</option>
-              </select>
-              <p className="text-xs text-muted-foreground mt-1.5">{t("settings.languageHint")}</p>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>{t("settings.language")}</Label>
+                <select
+                  value={i18n.language.split("-")[0]}
+                  onChange={e => changeLanguage(e.target.value)}
+                  className="w-full h-10 rounded-md bg-background border border-input text-foreground px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value="en">{t("languages.en")}</option>
+                  <option value="id">{t("languages.id")}</option>
+                  <option value="zh">{t("languages.zh")}</option>
+                </select>
+                <p className="text-xs text-muted-foreground mt-1.5">{t("settings.languageHint")}</p>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -130,10 +181,69 @@ export default function Settings({ company, onUpdate }: Props) {
 
       <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.1 }}>
         <Card className="border shadow-sm">
+          <CardHeader className="p-5 pb-2">
+            <CardTitle className="text-base font-semibold">{t("settings.teamMembers")}</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              {loadingMembers ? (
+                <div className="p-10 flex flex-col items-center justify-center gap-2">
+                  <div className="w-6 h-6 border-2 border-primary border-t-transparent animate-spin rounded-full" />
+                  <p className="text-xs text-muted-foreground">{t("common.loading")}</p>
+                </div>
+              ) : members.length === 0 ? (
+                <div className="p-10 text-center">
+                  <p className="text-sm text-muted-foreground">No other members yet.</p>
+                </div>
+              ) : (
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-border/50 bg-muted/30">
+                      <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{t("auth.fullName")}</th>
+                      <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Email</th>
+                      <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{t("ledger.actions")}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/30">
+                    {members.map((m, i) => (
+                      <tr key={i} className="hover:bg-muted/20 transition-colors">
+                        <td className="px-5 py-3.5 whitespace-nowrap">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary shrink-0 border border-primary/20 shadow-sm">
+                              {(m.profiles?.full_name || "U")[0].toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium leading-none">{m.profiles?.full_name || "User"}</p>
+                              <p className="text-[10px] text-muted-foreground mt-1 uppercase tracking-tight font-semibold">{m.role}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <p className="text-xs font-mono text-muted-foreground bg-secondary/50 px-2 py-0.5 rounded inline-block">
+                            {m.profiles?.email || "-"}
+                          </p>
+                        </td>
+                        <td className="px-5 py-3.5 text-right whitespace-nowrap">
+                          <p className="text-[10px] text-muted-foreground italic">
+                            Joined: {new Date(m.joined_at).toLocaleDateString()}
+                          </p>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.15 }}>
+        <Card className="border shadow-sm">
           <CardContent className="p-5">
             <div className="grid grid-cols-3 gap-4 text-center">
               <div>
-                <p className="text-2xl font-bold font-mono-nums">1</p>
+                <p className="text-2xl font-bold font-mono-nums">{company.memberCount ?? 1}</p>
                 <p className="text-xs text-muted-foreground mt-1">{t("settings.teamMembers")}</p>
               </div>
               <div>

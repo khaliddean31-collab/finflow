@@ -156,6 +156,42 @@ export async function updateCompany(
     return { company: data as CompanyRow, error: null };
 }
 
+/**
+ * Fetch the number of members in a company (members + 1 owner).
+ */
+export async function getCompanyMemberCount(companyId: string) {
+    const { count, error } = await supabase
+        .from("company_members")
+        .select("*", { count: "exact", head: true })
+        .eq("company_id", companyId);
+
+    if (error) return { count: 1, error: { message: error.message } };
+    // count is only the members, add 1 for the owner
+    return { count: (count ?? 0) + 1, error: null };
+}
+
+/**
+ * Fetch all members of a company with their profiles.
+ */
+export async function getCompanyMembers(companyId: string) {
+    const { data, error } = await supabase
+        .from("company_members")
+        .select(`
+            role,
+            joined_at,
+            profiles (
+                id,
+                full_name,
+                email,
+                avatar_url
+            )
+        `)
+        .eq("company_id", companyId);
+
+    if (error) return { members: [], error: { message: error.message } };
+    return { members: data ?? [], error: null };
+}
+
 // ─── Transactions ─────────────────────────────────────────────────────────────
 
 export type TransactionRow = {

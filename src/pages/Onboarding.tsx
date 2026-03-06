@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
+import { supabase } from "@/lib/supabase";
 import { Company, MOCK_COMPANY } from "@/lib/data";
 import { createCompany, findCompanyByJoinCode, joinCompany, upsertProfile } from "@/lib/database";
 import { useTranslation } from "react-i18next";
@@ -53,12 +54,15 @@ export default function Onboarding({ onComplete, userId }: Props) {
         return;
       }
 
-      // Also store the display name in profiles table (pull from auth metadata)
-      await upsertProfile(userId, "");
+      // Pull the full name from auth metadata if available
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      const fullNameFromAuth = authUser?.user_metadata?.full_name || "";
+
+      await upsertProfile(userId, fullNameFromAuth);
 
       onComplete(
         { id: row!.id, name: row!.name, currency: row!.currency, joinCode: row!.join_code },
-        ""
+        fullNameFromAuth
       );
     } else {
       // Fallback: local only (no Supabase)

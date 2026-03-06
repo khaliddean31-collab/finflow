@@ -11,21 +11,26 @@ create extension if not exists "pgcrypto";
 create table if not exists public.profiles (
   id          uuid primary key references auth.users(id) on delete cascade,
   full_name   text,
+  email       text,
   avatar_url  text,
   created_at  timestamptz default now(),
   updated_at  timestamptz default now()
 );
 
+-- WAJIB: Tambahkan kolom email jika tabel profiles sudah terlanjur dibuat sebelumnya
+alter table public.profiles add column if not exists email text;
+
 -- Trigger: otomatis buat profil kosong saat user baru register
 create or replace function public.handle_new_user()
 returns trigger language plpgsql security definer as $$
 begin
-  insert into public.profiles (id, full_name)
+  insert into public.profiles (id, full_name, email)
   values (
     new.id,
-    coalesce(new.raw_user_meta_data->>'full_name', '')
+    coalesce(new.raw_user_meta_data->>'full_name', ''),
+    new.email
   )
-  on conflict (id) do nothing;
+  on conflict (id) do update set email = excluded.email;
   return new;
 end;
 $$;
@@ -71,85 +76,76 @@ create table if not exists public.transactions (
   created_at  timestamptz default now()
 );
 
+-- ─── TRIGER: Otomatis Tambahkan Owner sebagai Admin ──────────────────────────
+create or replace function public.handle_new_company()
+returns trigger language plpgsql security definer as $$
+begin
+  insert into public.company_members (user_id, company_id, role)
+  values (new.owner_id, new.id, 'admin');
+  return new;
+end;
+$$;
+
+drop trigger if exists on_company_created on public.companies;
+create trigger on_company_created
+  after insert on public.companies
+  for each row execute procedure public.handle_new_company();
+
 -- ─── Row Level Security (RLS) ─────────────────────────────────────────────────
--- Pastikan setiap user hanya bisa membaca/mengubah data miliknya sendiri.
 
--- profiles: user hanya bisa lihat dan update profil sendiri
+-- 1. BERSIHKAN SEMUA KEBIJAKAN (POLICIES) LAMA AGAR TIDAK BENTROK
+DO $$ 
+DECLARE 
+    r RECORD;
+BEGIN 
+    FOR r IN (
+        SELECT policyname, tablename 
+        FROM pg_policies 
+        WHERE schemaname = 'public' 
+        AND tablename IN ('profiles', 'companies', 'company_members', 'transactions')
+    ) 
+    LOOP 
+        EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', r.policyname, r.tablename); 
+    END LOOP; 
+END $$;
+
+-- 2. AKTIFKAN RLS
 alter table public.profiles enable row level security;
-
-create policy "Users can view own profile"
-  on public.profiles for select
-  using (auth.uid() = id);
-
-create policy "Users can update own profile"
-  on public.profiles for update
-  using (auth.uid() = id);
-
-create policy "Users can insert own profile"
-  on public.profiles for insert
-  with check (auth.uid() = id);
-
--- companies: owner bisa CRUD; member (via company_members) bisa SELECT
 alter table public.companies enable row level security;
-
-create policy "Owner has full access to their company"
-  on public.companies for all
-  using (auth.uid() = owner_id);
-
-create policy "Members can view their company"
-  on public.companies for select
-  using (
-    id in (
-      select company_id from public.company_members where user_id = auth.uid()
-    )
-  );
-
--- company_members: user hanya bisa insert/view membership miliknya sendiri
 alter table public.company_members enable row level security;
-
-create policy "Members can view own memberships"
-  on public.company_members for select
-  using (auth.uid() = user_id);
-
-create policy "Members can join a company"
-  on public.company_members for insert
-  with check (auth.uid() = user_id);
-
-create policy "Members can leave a company"
-  on public.company_members for delete
-  using (auth.uid() = user_id);
-
--- transactions: owner atau member company bisa akses
 alter table public.transactions enable row level security;
 
-create policy "Company members can view transactions"
-  on public.transactions for select
-  using (
-    company_id in (
-      select id from public.companies where owner_id = auth.uid()
-      union
-      select company_id from public.company_members where user_id = auth.uid()
-    )
-  );
+-- 3. BUAT KEBIJAKAN BARU YANG BERSIH & BEBAS REKURSI
 
-create policy "Company members can insert transactions"
-  on public.transactions for insert
-  with check (
-    company_id in (
-      select id from public.companies where owner_id = auth.uid()
-      union
-      select company_id from public.company_members where user_id = auth.uid()
-    )
-  );
+-- Profiles: Siapa saja bisa lihat (untuk daftar tim), tapi hanya bisa disunting diri sendiri
+create policy "Profiles: Allow read all" on public.profiles for select using (true);
+create policy "Profiles: Allow update own" on public.profiles for update using (auth.uid() = id);
+create policy "Profiles: Allow insert own" on public.profiles for insert with check (auth.uid() = id);
 
-create policy "Company members can delete own transactions"
-  on public.transactions for delete
-  using (auth.uid() = user_id);
+-- Companies: Owner punya kuasa penuh, namun siapa pun yang login bisa mencari company via Join Code
+create policy "Companies: Owner all access" on public.companies for all using (auth.uid() = owner_id);
+create policy "Companies: Allow lookup" on public.companies for select to authenticated using (true);
 
--- ─── Indexes (performance) ────────────────────────────────────────────────────
-create index if not exists idx_companies_owner     on public.companies(owner_id);
+-- Company Members: Semua orang bisa gabung dan ngintip siapa rekan setimnya (tanpa perlu loop query yg bikin recursion)
+create policy "Members: Allow join" on public.company_members for insert with check (auth.uid() = user_id);
+create policy "Members: Allow see teams" on public.company_members for select to authenticated using (true);
+create policy "Members: Allow leave" on public.company_members for delete using (auth.uid() = user_id);
+
+-- Transactions: Filter berdasarkan kepemilikan owner atau membership
+create policy "Transactions: Select" on public.transactions for select using (
+  company_id in (select id from public.companies where owner_id = auth.uid()) OR
+  company_id in (select company_id from public.company_members where user_id = auth.uid())
+);
+create policy "Transactions: Insert" on public.transactions for insert with check (
+  company_id in (select id from public.companies where owner_id = auth.uid()) OR
+  company_id in (select company_id from public.company_members where user_id = auth.uid())
+);
+create policy "Transactions: Delete" on public.transactions for delete using (auth.uid() = user_id);
+
+-- ─── Indexes ──────────────────────────────────────────────────────────────────
+create index if not exists idx_companies_owner on public.companies(owner_id);
 create index if not exists idx_companies_join_code on public.companies(join_code);
-create index if not exists idx_members_user        on public.company_members(user_id);
-create index if not exists idx_members_company     on public.company_members(company_id);
+create index if not exists idx_members_user on public.company_members(user_id);
+create index if not exists idx_members_company on public.company_members(company_id);
 create index if not exists idx_transactions_company on public.transactions(company_id);
-create index if not exists idx_transactions_date    on public.transactions(date desc);
+create index if not exists idx_transactions_date on public.transactions(date desc);

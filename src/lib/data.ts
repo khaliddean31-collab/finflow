@@ -16,6 +16,7 @@ export type Company = {
   currency: string;
   logo?: string;
   joinCode: string;
+  memberCount?: number;
 };
 
 export const CATEGORIES = {

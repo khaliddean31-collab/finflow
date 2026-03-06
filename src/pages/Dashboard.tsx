@@ -6,7 +6,7 @@ import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell, Legend,
 } from "recharts";
-import { Transaction, MONTHLY_CHART_DATA, formatCurrency } from "@/lib/data";
+import { Transaction, formatCurrency } from "@/lib/data";
 import { useTranslation } from "react-i18next";
 
 
@@ -30,18 +30,55 @@ export default function Dashboard({ transactions, currency, loading = false }: P
   const totalExpense = useMemo(() => transactions.filter(t => t.type === "expense").reduce((s, t) => s + t.amount, 0), [transactions]);
   const balance = totalIncome - totalExpense;
 
-  const expensePieData = useMemo(() => {
-    const map: Record<string, number> = {};
-    transactions.filter(t => t.type === "expense").forEach(tx => {
-      map[tx.category] = (map[tx.category] || 0) + tx.amount;
-    });
-    return Object.entries(map).map(([name, value]) => ({
-      name: t(`categories.${name}`, { defaultValue: name }),
-      value,
-    }));
-  }, [transactions, t]);
+  const totalVolume = totalIncome + totalExpense;
+  const cashFlowPieData = useMemo(() => {
+    const data = [];
+    if (totalIncome > 0) {
+      data.push({
+        name: t("dashboard.income", { defaultValue: "Pendapatan" }),
+        value: totalIncome,
+        color: "hsl(160,84%,39%)" // Green
+      });
+    }
+    if (totalExpense > 0) {
+      data.push({
+        name: t("dashboard.expense", { defaultValue: "Pengeluaran" }),
+        value: totalExpense,
+        color: "hsl(0,84%,60%)" // Red
+      });
+    }
+    return data;
+  }, [totalIncome, totalExpense, t]);
+
+  const monthlyChartData = useMemo(() => {
+    if (transactions.length === 0) {
+      const monthLabel = new Date().toLocaleString('default', { month: 'short' });
+      return [{ month: monthLabel, income: 0, expense: 0 }];
+    }
+
+    const map = new Map<string, { month: string; income: number; expense: number }>();
+
+    [...transactions]
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .forEach((tx) => {
+        const d = new Date(tx.date);
+        const monthLabel = d.toLocaleString('default', { month: 'short' });
+        const key = `${d.getFullYear()}-${d.getMonth()}`;
+
+        if (!map.has(key)) {
+          map.set(key, { month: monthLabel, income: 0, expense: 0 });
+        }
+
+        const item = map.get(key)!;
+        if (tx.type === "income") item.income += tx.amount;
+        if (tx.type === "expense") item.expense += tx.amount;
+      });
+
+    return Array.from(map.values());
+  }, [transactions]);
 
   const recentTransactions = [...transactions].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
+
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload?.length) {
@@ -142,7 +179,7 @@ export default function Dashboard({ transactions, currency, loading = false }: P
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={240}>
-                <AreaChart data={MONTHLY_CHART_DATA}>
+                <AreaChart data={monthlyChartData}>
                   <defs>
                     <linearGradient id="incomeGrad" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="hsl(160,84%,39%)" stopOpacity={0.2} />
@@ -173,31 +210,60 @@ export default function Dashboard({ transactions, currency, loading = false }: P
         >
           <Card className="border shadow-sm h-full">
             <CardHeader className="pb-2">
-              <CardTitle className="text-base font-semibold">{t("dashboard.expenseBreakdown")}</CardTitle>
-              <p className="text-xs text-muted-foreground">{t("dashboard.byCategory")}</p>
+              <CardTitle className="text-base font-semibold">{t("dashboard.cashFlow", { defaultValue: "Ringkasan Arus Kas" })}</CardTitle>
+              <p className="text-xs text-muted-foreground">{t("dashboard.incomeVsExpenseRatio", { defaultValue: "Pendapatan vs Pengeluaran" })}</p>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={200}>
-                <PieChart>
-                  <Pie data={expensePieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="value">
-                    {expensePieData.map((_, i) => (
-                      <Cell key={i} fill={EXPENSE_COLORS[i % EXPENSE_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(val: number) => formatCurrency(val, currency)} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="space-y-1.5 mt-2">
-                {expensePieData.slice(0, 4).map((item, i) => (
-                  <div key={item.name} className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: EXPENSE_COLORS[i % EXPENSE_COLORS.length] }} />
-                      <span className="text-muted-foreground">{item.name}</span>
-                    </div>
-                    <span className="font-medium font-mono-nums">{formatCurrency(item.value, currency)}</span>
+              {cashFlowPieData.length > 0 ? (
+                <>
+                  <ResponsiveContainer width="100%" height={240}>
+                    <PieChart>
+                      <Pie
+                        data={cashFlowPieData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={65}
+                        outerRadius={90}
+                        paddingAngle={5}
+                        dataKey="value"
+                        labelLine={false}
+                        stroke="transparent"
+                      >
+                        {cashFlowPieData.map((item, i) => (
+                          <Cell key={i} fill={item.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(val: number) => formatCurrency(val, currency)}
+                        contentStyle={{ borderRadius: '8px', border: '1px solid hsl(var(--border))' }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="space-y-3 mt-4">
+                    {cashFlowPieData.map((item) => {
+                      const percent = totalVolume > 0 ? ((item.value / totalVolume) * 100).toFixed(1) : "0.0";
+                      return (
+                        <div key={item.name} className="flex items-center justify-between text-sm p-2 rounded-lg bg-muted/30">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-3.5 h-3.5 rounded-full shadow-sm" style={{ backgroundColor: item.color }} />
+                            <span className="font-semibold text-muted-foreground">{item.name}</span>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <span className="font-bold text-xs" style={{ color: item.color }}>{percent}%</span>
+                            <span className="font-bold font-mono-nums text-right">{formatCurrency(item.value, currency)}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                ))}
-              </div>
+                </>
+              ) : (
+                <div className="h-[240px] flex flex-col items-center justify-center text-center text-muted-foreground">
+                  <PieChart className="h-12 w-12 opacity-20 mb-2" />
+                  <p className="text-sm">{t("dashboard.noTransactions", { defaultValue: "Belum ada transaksi" })}</p>
+                  <p className="text-xs opacity-70 mt-1">{t("dashboard.noTransactionsHint", { defaultValue: "Data grafik akan muncul setelah Anda menambahkan transaksi." })}</p>
+                </div>
+              )}
             </CardContent>
           </Card>
         </motion.div>
