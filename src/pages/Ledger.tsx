@@ -13,21 +13,21 @@ import {
 } from "@/components/ui/select";
 import { Transaction, CATEGORIES, formatCurrency } from "@/lib/data";
 import { useTranslation } from "react-i18next";
-
-import * as XLSX from "xlsx";
+import { exportTransactionsExcel } from "@/lib/exportExcel";
 
 type Props = {
   transactions: Transaction[];
   onAdd: (t: Omit<Transaction, "id">) => void;
   onDelete: (id: string) => void;
   currency: string;
+  companyName: string;
   loading?: boolean;
 };
 
 type FormState = { title: string; amount: string; category: string; type: "income" | "expense"; date: string; note: string };
 const EMPTY_FORM: FormState = { title: "", amount: "", category: "", type: "expense" as "income" | "expense", date: new Date().toISOString().split("T")[0], note: "" };
 
-export default function Ledger({ transactions, onAdd, onDelete, currency, loading = false }: Props) {
+export default function Ledger({ transactions, onAdd, onDelete, currency, companyName, loading = false }: Props) {
   const { t } = useTranslation();
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState<"all" | "income" | "expense">("all");
@@ -64,18 +64,9 @@ export default function Ledger({ transactions, onAdd, onDelete, currency, loadin
     setOpen(false);
   };
 
-  const exportExcel = () => {
-    const data = filtered.map(t => ({
-      Date: t.date, Title: t.title, Category: t.category,
-      Type: t.type.charAt(0).toUpperCase() + t.type.slice(1),
-      Amount: t.type === "income" ? t.amount : -t.amount,
-      Currency: currency,
-    }));
-    const ws = XLSX.utils.json_to_sheet(data);
-    ws["!cols"] = [{ wch: 12 }, { wch: 25 }, { wch: 15 }, { wch: 10 }, { wch: 12 }, { wch: 8 }];
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Transactions");
-    XLSX.writeFile(wb, `finflow-report-${new Date().toISOString().split("T")[0]}.xlsx`);
+  const exportExcel = async () => {
+    const filterLabel = filterType === "all" ? "All Transactions" : filterType === "income" ? "Income Only" : "Expense Only";
+    await exportTransactionsExcel(filtered, companyName, currency, filterLabel);
   };
 
   return (

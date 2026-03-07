@@ -213,6 +213,7 @@ function AppShell() {
                 onAdd={addTransaction}
                 onDelete={deleteTransaction}
                 currency={company.currency}
+                companyName={company.name}
                 loading={txLoading}
               />
             }
