@@ -20,8 +20,34 @@ export type Company = {
 };
 
 export const CATEGORIES = {
-  income: ["Salary", "Freelance", "Investment", "Bonus", "Other"],
-  expense: ["Operations", "Marketing", "Payroll", "Software", "Travel", "Office", "Tax", "Other"],
+  income: [
+    "Product Sales",
+    "Service Revenue",
+    "Project Revenue",
+    "Consulting",
+    "Subscription",
+    "Commission",
+    "Royalty",
+    "Investment Return",
+    "Grant & Funding",
+    "Partnership Revenue",
+    "Other Income",
+  ],
+  expense: [
+    "Operations",
+    "Payroll & Benefits",
+    "Marketing & Ads",
+    "Software & Tools",
+    "Infrastructure",
+    "Office & Facilities",
+    "Business Travel",
+    "Legal & Compliance",
+    "Research & Dev",
+    "Training",
+    "Tax & Duties",
+    "Vendor & Supplies",
+    "Other Expense",
+  ],
 };
 
 export const MOCK_COMPANY: Company = {
