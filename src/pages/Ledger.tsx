@@ -28,7 +28,7 @@ type FormState = { title: string; amount: string; category: string; type: "incom
 const EMPTY_FORM: FormState = { title: "", amount: "", category: "", type: "expense" as "income" | "expense", date: new Date().toISOString().split("T")[0], note: "" };
 
 export default function Ledger({ transactions, onAdd, onDelete, currency, companyName, loading = false }: Props) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState<"all" | "income" | "expense">("all");
   const [filterCategory, setFilterCategory] = useState("all");
@@ -65,8 +65,8 @@ export default function Ledger({ transactions, onAdd, onDelete, currency, compan
   };
 
   const exportExcel = async () => {
-    const filterLabel = filterType === "all" ? "All Transactions" : filterType === "income" ? "Income Only" : "Expense Only";
-    await exportTransactionsExcel(filtered, companyName, currency, filterLabel);
+    const lang = i18n.language.split("-")[0] as "id" | "en" | "zh";
+    await exportTransactionsExcel(filtered, companyName, currency, filterType, lang);
   };
 
   return (
