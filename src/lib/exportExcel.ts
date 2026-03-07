@@ -64,7 +64,7 @@ const LABELS: Record<Lang, Record<string, string>> = {
         filterAll: "Semua Transaksi",
         filterIncome: "Hanya Pendapatan",
         filterExpense: "Hanya Pengeluaran",
-        poweredBy: "FinFlow — Dibuat oleh Dean Khalid  |  finflow-dean.vercel.app",
+        poweredBy: "FinFlow — Dibuat oleh Dean Khalid  |  finflow-dk.vercel.app",
     },
     en: {
         reportTitle: "Financial Report",
@@ -94,7 +94,7 @@ const LABELS: Record<Lang, Record<string, string>> = {
         filterAll: "All Transactions",
         filterIncome: "Income Only",
         filterExpense: "Expense Only",
-        poweredBy: "FinFlow — By Dean Khalid  |  finflow-dean.vercel.app",
+        poweredBy: "FinFlow — By Dean Khalid  |  finflow-dk.vercel.app",
     },
     zh: {
         reportTitle: "财务报告",
@@ -124,7 +124,7 @@ const LABELS: Record<Lang, Record<string, string>> = {
         filterAll: "所有交易",
         filterIncome: "仅收入",
         filterExpense: "仅支出",
-        poweredBy: "FinFlow — 作者：Dean Khalid  |  finflow-dean.vercel.app",
+        poweredBy: "FinFlow — 作者：Dean Khalid  |  finflow-dk.vercel.app",
     },
 };
 
