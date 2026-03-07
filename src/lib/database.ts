@@ -4,16 +4,13 @@ import type { Company, Transaction } from "./data";
 // ─── Profile ──────────────────────────────────────────────────────────────────
 
 export type Profile = {
-    id: string;           // = auth.uid
+    id: string;
     full_name: string;
     avatar_url?: string;
     created_at?: string;
     updated_at?: string;
 };
 
-/**
- * Upsert a user profile row (safe to call on first login too).
- */
 export async function upsertProfile(userId: string, fullName: string) {
     const { data, error } = await supabase
         .from("profiles")
@@ -28,9 +25,6 @@ export async function upsertProfile(userId: string, fullName: string) {
     return { profile: data as Profile, error: null };
 }
 
-/**
- * Fetch the profile for the current authenticated user.
- */
 export async function getProfile(userId: string) {
     const { data, error } = await supabase
         .from("profiles")
@@ -54,9 +48,6 @@ export type CompanyRow = {
     updated_at?: string;
 };
 
-/**
- * Create a new company and link the owner.
- */
 export async function createCompany(
     ownerId: string,
     company: Pick<Company, "name" | "currency" | "joinCode">
@@ -78,7 +69,6 @@ export async function createCompany(
 
 /**
  * Fetch the company for a user — checks ownership first, then membership.
- * This is the primary function to call on app load.
  */
 export async function getUserCompany(userId: string) {
     // 1. Check if user owns a company
@@ -108,9 +98,6 @@ export async function getUserCompany(userId: string) {
     return { company: null, error: { message: "No company found" } };
 }
 
-/**
- * Find a company by its join code (for joining an existing workspace).
- */
 export async function findCompanyByJoinCode(joinCode: string) {
     const { data, error } = await supabase
         .from("companies")
@@ -123,14 +110,13 @@ export async function findCompanyByJoinCode(joinCode: string) {
 }
 
 /**
- * Record that a user has joined a company as a member.
- * Safe to call multiple times (upserts on conflict).
+ * Record that a user has joined a company as a member (role: 'member').
  */
 export async function joinCompany(userId: string, companyId: string) {
     const { error } = await supabase
         .from("company_members")
         .upsert(
-            { user_id: userId, company_id: companyId, joined_at: new Date().toISOString() },
+            { user_id: userId, company_id: companyId, role: "member", joined_at: new Date().toISOString() },
             { onConflict: "user_id,company_id" }
         );
 
@@ -138,9 +124,6 @@ export async function joinCompany(userId: string, companyId: string) {
     return { error: null };
 }
 
-/**
- * Update company info (name, currency).
- */
 export async function updateCompany(
     companyId: string,
     updates: Partial<Pick<Company, "name" | "currency">>
@@ -156,8 +139,56 @@ export async function updateCompany(
     return { company: data as CompanyRow, error: null };
 }
 
+// ─── Member Management ────────────────────────────────────────────────────────
+
+export type MemberRow = {
+    user_id: string;
+    company_id: string;
+    role: "member" | "admin";
+    joined_at?: string;
+    profiles: {
+        full_name: string | null;
+        avatar_url: string | null;
+    } | null;
+};
+
 /**
- * Fetch the number of members in a company (members + 1 owner).
+ * Fetch all members of a company (including owner who is admin).
+ */
+export async function getCompanyMembers(companyId: string) {
+    const { data, error } = await supabase
+        .from("company_members")
+        .select("user_id, company_id, role, joined_at, profiles(full_name, avatar_url)")
+        .eq("company_id", companyId)
+        .order("joined_at", { ascending: true });
+
+    if (error) return { members: [], error: { message: error.message } };
+    // Supabase returns profiles as array; normalize to single object
+    const members: MemberRow[] = (data ?? []).map((row: unknown) => {
+        const r = row as {
+            user_id: string;
+            company_id: string;
+            role: "member" | "admin";
+            joined_at?: string;
+            profiles: { full_name: string | null; avatar_url: string | null }[] | { full_name: string | null; avatar_url: string | null } | null;
+        };
+        const profilesRaw = r.profiles;
+        const profile = Array.isArray(profilesRaw)
+            ? (profilesRaw[0] ?? null)
+            : profilesRaw;
+        return {
+            user_id: r.user_id,
+            company_id: r.company_id,
+            role: r.role,
+            joined_at: r.joined_at,
+            profiles: profile,
+        };
+    });
+    return { members, error: null };
+}
+
+/**
+ * Fetch the number of members in a company (owner is included as admin).
  */
 export async function getCompanyMemberCount(companyId: string) {
     const { count, error } = await supabase
@@ -166,30 +197,51 @@ export async function getCompanyMemberCount(companyId: string) {
         .eq("company_id", companyId);
 
     if (error) return { count: 1, error: { message: error.message } };
-    // count is only the members, add 1 for the owner
-    return { count: (count ?? 0) + 1, error: null };
+    return { count: count ?? 1, error: null };
 }
 
 /**
- * Fetch all members of a company with their profiles.
+ * Get the current user's role in a company.
  */
-export async function getCompanyMembers(companyId: string) {
+export async function getCurrentUserRole(userId: string, companyId: string) {
     const { data, error } = await supabase
         .from("company_members")
-        .select(`
-            role,
-            joined_at,
-            profiles (
-                id,
-                full_name,
-                email,
-                avatar_url
-            )
-        `)
+        .select("role")
+        .eq("user_id", userId)
+        .eq("company_id", companyId)
+        .maybeSingle();
+
+    if (error || !data) return { role: "member" as const };
+    return { role: data.role as "member" | "admin" };
+}
+
+/**
+ * Update role of a member (admin → member or member → admin).
+ * Only admins can call this (also enforced via RLS).
+ */
+export async function updateMemberRole(userId: string, companyId: string, role: "member" | "admin") {
+    const { error } = await supabase
+        .from("company_members")
+        .update({ role })
+        .eq("user_id", userId)
         .eq("company_id", companyId);
 
-    if (error) return { members: [], error: { message: error.message } };
-    return { members: data ?? [], error: null };
+    if (error) return { error: { message: error.message } };
+    return { error: null };
+}
+
+/**
+ * Remove a member from a company.
+ */
+export async function removeMember(userId: string, companyId: string) {
+    const { error } = await supabase
+        .from("company_members")
+        .delete()
+        .eq("user_id", userId)
+        .eq("company_id", companyId);
+
+    if (error) return { error: { message: error.message } };
+    return { error: null };
 }
 
 // ─── Transactions ─────────────────────────────────────────────────────────────
@@ -207,9 +259,6 @@ export type TransactionRow = {
     created_at?: string;
 };
 
-/**
- * Fetch all transactions for a company, ordered by date desc.
- */
 export async function getTransactions(companyId: string) {
     const { data, error } = await supabase
         .from("transactions")
@@ -221,9 +270,6 @@ export async function getTransactions(companyId: string) {
     return { transactions: (data ?? []) as TransactionRow[], error: null };
 }
 
-/**
- * Insert a new transaction.
- */
 export async function addTransaction(
     companyId: string,
     userId: string,
@@ -248,9 +294,6 @@ export async function addTransaction(
     return { transaction: data as TransactionRow, error: null };
 }
 
-/**
- * Delete a transaction by ID.
- */
 export async function deleteTransaction(transactionId: string) {
     const { error } = await supabase
         .from("transactions")

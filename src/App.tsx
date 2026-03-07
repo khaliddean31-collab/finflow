@@ -11,6 +11,7 @@ import {
   getUserCompany,
   getTransactions,
   getCompanyMemberCount,
+  getCurrentUserRole,
   addTransaction as dbAddTransaction,
   deleteTransaction as dbDeleteTransaction,
 } from "@/lib/database";
@@ -41,6 +42,7 @@ function AppShell() {
 
   const [company, setCompany] = useState<Company | null>(null);
   const [userName, setUserName] = useState("");
+  const [currentUserRole, setCurrentUserRole] = useState<"admin" | "member">("member");
   const [appLoading, setAppLoading] = useState(true);
 
   // Transactions: start empty, loaded from DB after company is known
@@ -64,7 +66,11 @@ function AppShell() {
         // Load the company the user owns or is a member of
         const { company: companyRow } = await getUserCompany(user!.id);
         if (companyRow) {
-          const { count } = await getCompanyMemberCount(companyRow.id);
+          const [{ count }, { role }] = await Promise.all([
+            getCompanyMemberCount(companyRow.id),
+            getCurrentUserRole(user!.id, companyRow.id),
+          ]);
+          setCurrentUserRole(role);
           setCompany({
             id: companyRow.id,
             name: companyRow.name,
@@ -156,6 +162,7 @@ function AppShell() {
     await signOut();
     setCompany(null);
     setUserName("");
+    setCurrentUserRole("member");
     setTransactions([]);
   };
 
@@ -215,14 +222,9 @@ function AppShell() {
             element={
               <Settings
                 company={company}
-                onUpdate={(newCompany) => {
-                  const currencyChanged = company.currency !== newCompany.currency;
-                  setCompany(newCompany);
-                  if (currencyChanged) {
-                    // Force reload the page so transactions refetch and formatters update
-                    window.location.reload();
-                  }
-                }}
+                onUpdate={setCompany}
+                currentUserId={user.id}
+                currentUserRole={currentUserRole}
               />
             }
           />
